@@ -63,7 +63,7 @@
         <dependency>
             <groupId>org.codehaus.groovy</groupId>
             <artifactId>groovy-templates</artifactId>
-            <version>2.3.0</version>
+            <version>3.0.25</version>
         </dependency>
         <!-- http://search.maven.org/#search%7Cgav%7C1%7Cg%3A%22com.google.code.gson%22%20AND%20a%3A%22gson%22 -->
         <dependency>
