@@ -192,6 +192,12 @@ public class NotifyRecorder extends Recorder
                 }
             }
         }
+        catch (AbortException e) {
+            throw e;
+        }
+        catch (IOException | IllegalArgumentException e) {
+            throw new AbortException("Notification request failed (" + e.getClass().getSimpleName() + ").");
+        }
     }
 
 

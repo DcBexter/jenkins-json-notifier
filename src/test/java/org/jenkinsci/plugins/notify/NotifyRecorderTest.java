@@ -126,4 +126,13 @@ public class NotifyRecorderTest {
         j.assertLogNotContains("private-token", build);
         assertEquals(1, requests.get());
     }
+
+    @Test public void malformedWebhookDoesNotLeakItsToken() throws Exception {
+        FreeStyleProject project = j.createFreeStyleProject();
+        project.getPublishersList().add(new NotifyRecorder(url() + "?token=private token", null));
+        FreeStyleBuild build = j.assertBuildStatus(Result.FAILURE, project.scheduleBuild2(0));
+        j.assertLogContains("Notification request failed", build);
+        j.assertLogNotContains("private token", build);
+        assertEquals(0, requests.get());
+    }
 }
