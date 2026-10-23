@@ -1,4 +1,8 @@
 {
-  "content": "Build ${env.BUILD_DISPLAY_NAME}! ${build.getCauses()[0].userName} hat ${env.SVN_URL_1} in Revision ${ env.SVN_REVISION_1 } von [${build.parent.displayName}](${ jenkins.rootUrl + build.url }) ausgerollt.",
-  "avatar_url": "https://wiki.jenkins.io/download/attachments/2916393/headshot.png?version=1&modificationDate=1302753947000&api=v2"
+  "job": ${json(build.parent.fullName)},
+  "number": ${json(build.number)},
+  "result": ${json(build.result.toString())},
+  "url": ${json(jenkins.rootUrl ? jenkins.rootUrl + build.url : build.url)},
+  "git_branch": ${json(env.GIT_BRANCH)},
+  "git_commit": ${json(env.GIT_COMMIT)}
 }

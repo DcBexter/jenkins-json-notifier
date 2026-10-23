@@ -6,6 +6,7 @@ import com.google.common.io.Resources;
 import groovy.json.JsonSlurper;
 import groovy.text.SimpleTemplateEngine;
 import hudson.Extension;
+import hudson.AbortException;
 import hudson.Launcher;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
@@ -18,21 +19,25 @@ import hudson.tasks.Recorder;
 import hudson.util.FormValidation;
 import jenkins.model.Jenkins;
 import org.apache.http.Consts;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.util.Asserts;
 import org.apache.http.util.EntityUtils;
 import org.apache.http.util.TextUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
+import org.jenkinsci.plugins.scriptsecurity.scripts.ApprovalContext;
+import org.jenkinsci.plugins.scriptsecurity.scripts.ScriptApproval;
+import org.jenkinsci.plugins.scriptsecurity.scripts.UnapprovedUsageException;
+import org.jenkinsci.plugins.scriptsecurity.scripts.languages.GroovyLanguage;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
@@ -46,17 +51,14 @@ public class NotifyRecorder extends Recorder
     private static final int        CONNECT_TIMEOUT         = 15000;
     private static final int        CONNECT_REQUEST_TIMEOUT = 15000;
     private static final int        SOCKET_TIMEOUT          = 15000;
-    private static final HttpClient HTTP_CLIENT             = buildHttpClient();
     private static final String     JSON_FUNCTION           = loadResource( "/json.groovy" );
     private static final String     DEFAULT_TEMPLATE        = loadResource( "/default-template.json"  );
-    private static final String     LINE                    = "\n---------------\n";
 
-    @Nullable public  final     String        notifyUrl;
-    @Nonnull  public  final     String        notifyTemplate;
-    @Nonnull  private transient BuildListener listener;
+    @CheckForNull public final String notifyUrl;
+    @NonNull public final String notifyTemplate;
 
 
-    private static HttpClient buildHttpClient () {
+    private static CloseableHttpClient buildHttpClient () {
         RequestConfig requestConfig = RequestConfig.custom().
                                       setConnectTimeout( CONNECT_TIMEOUT ).
                                       setSocketTimeout( SOCKET_TIMEOUT ).
@@ -88,6 +90,22 @@ public class NotifyRecorder extends Recorder
     public NotifyRecorder ( String notifyUrl, String notifyTemplate ) {
         this.notifyUrl      = TextUtils.isBlank( notifyUrl ) ? null : notifyUrl.trim();
         this.notifyTemplate = ( TextUtils.isBlank( notifyTemplate ) ? DEFAULT_TEMPLATE : notifyTemplate ).trim();
+        configureApproval(ApprovalContext.create().withCurrentUser());
+    }
+
+    private void configureApproval(ApprovalContext context) {
+        if (!DEFAULT_TEMPLATE.trim().equals(notifyTemplate)) {
+            ScriptApproval.get().configuring(templateSource(notifyTemplate), GroovyLanguage.get(), context, false);
+        }
+    }
+
+    protected Object readResolve() {
+        configureApproval(ApprovalContext.create());
+        return this;
+    }
+
+    static String templateSource(String template) {
+        return "<%\n\n" + JSON_FUNCTION + "\n\n%>\n\n" + template;
     }
 
 
@@ -105,37 +123,39 @@ public class NotifyRecorder extends Recorder
     public boolean perform ( AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener )
         throws InterruptedException, IOException
     {
-        this.listener              = notNull( listener, "Build listener" );
         boolean isIntermediateStep = build.getUrl().contains( "$" );
-        boolean isSuccessResult    = build.getResult().isBetterOrEqualTo( Result.SUCCESS );
+        boolean isSuccessResult    = Result.SUCCESS.equals(build.getResult());
 
         if ( isIntermediateStep || TextUtils.isBlank ( notifyUrl ) || ( ! isSuccessResult )) { return true; }
 
         listener.getLogger().println( String.format( "Building notify JSON payload" ));
         String notifyJson = buildNotifyJson( build, build.getEnvironment( listener ));
 
-        listener.getLogger().println( String.format( "Publishing notify JSON payload to %s", notifyUrl ));
+        listener.getLogger().println("Publishing notify JSON payload");
         // noinspection ConstantConditions
         sendNotifyRequest( notifyUrl, notifyJson );
         return true;
     }
 
 
-    private String buildNotifyJson( @Nonnull final AbstractBuild build,
-                                    @Nonnull final Map<String,?> env )
+    private String buildNotifyJson( @NonNull final AbstractBuild<?, ?> build,
+                                    @NonNull final Map<String,?> env ) throws IOException
     {
         Map<String,?> binding = new HashMap<String, Object>(){{
-           put( "jenkins", notNull( Jenkins.getInstance(), "Jenkins instance" ));
+           put( "jenkins", Jenkins.get());
            put( "build",   notNull( build, "Build instance" ));
            put( "env",     notNull( env, "Build environment" ));
         }};
 
         String json     = null;
-        String template = "<%\n\n" + JSON_FUNCTION + "\n\n%>\n\n" +
-                          notBlank( notifyTemplate, "Notify template" );
+        String template = templateSource(notifyTemplate);
 
         try
         {
+            // Custom templates execute on the controller and require whole-script approval.
+            if (!DEFAULT_TEMPLATE.trim().equals(notifyTemplate)) {
+                ScriptApproval.get().using(template, GroovyLanguage.get());
+            }
             json = notBlank( new SimpleTemplateEngine( getClass().getClassLoader()).
                              createTemplate( template ).
                              make( binding ).toString(), "Payload JSON" ).trim();
@@ -146,46 +166,32 @@ public class NotifyRecorder extends Recorder
 
             Asserts.notNull( new JsonSlurper().parseText( json ), "Parsed JSON" );
         }
-        catch ( Exception e )
-        {
-            throwError(( json == null ?
-                String.format( "Failed to parse Groovy template:%s%s%s",
-                               LINE, template, LINE ) :
-                String.format( "Failed to validate JSON payload (check with http://jsonlint.com/):%s%s%s",
-                               LINE, json, LINE )), e );
+        catch (UnapprovedUsageException e) {
+            throw new AbortException("Approve the notification template in Manage Jenkins > In-process Script Approval.");
+        }
+        catch (Exception e) {
+            throw new AbortException("Failed to render or validate notification JSON (" + e.getClass().getSimpleName() + ").");
         }
 
         return json;
     }
 
 
-    private void sendNotifyRequest( @Nonnull String url, @Nonnull String json )
+    private void sendNotifyRequest( @NonNull String url, @NonNull String json )
         throws IOException
     {
-        String status = "";
-        try
-        {
+        try (CloseableHttpClient client = buildHttpClient()) {
             HttpPost request = new HttpPost( notBlank( url, "Notify URL" ));
             request.setEntity( new StringEntity( notBlank( json, "Notify JSON" ),
                                                  ContentType.create( "application/json", Consts.UTF_8 )));
-            HttpResponse response   = HTTP_CLIENT.execute( request );
-            int          statusCode = response.getStatusLine().getStatusCode();
-            status = response.getStatusLine().toString();
-
-            Asserts.check( statusCode == 204, String.format( "status code is %s, expected 204", statusCode ));
-            request.releaseConnection();
+            try (CloseableHttpResponse response = client.execute(request)) {
+                int statusCode = response.getStatusLine().getStatusCode();
+                EntityUtils.consume(response.getEntity());
+                if (statusCode != 204) {
+                    throw new AbortException("Notification endpoint returned HTTP " + statusCode + "; expected 204.");
+                }
+            }
         }
-        catch ( Exception e )
-        {
-            throwError( String.format( "Failed to publish notify request to '%s', payload JSON was:%s%s%s%s",
-                                       notifyUrl, LINE, json, LINE, status ), e );
-        }
-    }
-
-
-    private void throwError( String message, Exception e ) {
-        listener.error( "%s: %s", message, e );
-        throw new RuntimeException( message, e );
     }
 
 
@@ -239,7 +245,10 @@ public class NotifyRecorder extends Recorder
 
 
         public FormValidation doCheckNotifyTemplate( @QueryParameter String notifyTemplate ) {
-            return FormValidation.ok();
+            if (TextUtils.isBlank(notifyTemplate) || DEFAULT_TEMPLATE.trim().equals(notifyTemplate.trim())) {
+                return FormValidation.ok();
+            }
+            return ScriptApproval.get().checking(templateSource(notifyTemplate.trim()), GroovyLanguage.get(), false);
         }
     }
 }

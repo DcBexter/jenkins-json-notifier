@@ -1,24 +1,23 @@
-jenkins-notify-plugin
-=====================
+Jenkins JSON Notifier
+====================
 
-Jenkins plugin sending POST request as a post-build action with configurable JSON payload.
+Jenkins plugin sending a POST request after a successful Freestyle build, with a configurable JSON payload. The endpoint must return **HTTP 204**.
 
-By default payload submitted contains the details of the build (build number, build result, job and log URLs), 
-URLs of artifacts generated, Git branch and commit SHA.
+The default payload contains the job name, build number, result and URL, plus Git branch and commit SHA when those environment variables exist.
  
-But being a configurable [Groovy template](http://groovy.codehaus.org/Groovy+Templates) it can contain any Jenkins, job or build details you may think of!
+Being a configurable [Groovy template](https://groovy-lang.org/templating.html), it can include other Jenkins, job or build details. Custom templates require administrator approval under **Manage Jenkins > In-process Script Approval**, including templates saved before upgrading. They execute trusted code on the controller; see [security notes](SECURITY.md).
 
-![Post-build action with JSON payload submitted as POST request](https://raw.githubusercontent.com/cloudnative/jenkins-notify-plugin/master/screenshots/jenkins-notify-plugin.png "Post-build action with JSON payload submitted as POST request")
+![Post-build action with JSON payload submitted as POST request](screenshots/jenkins-notify-plugin.png "Post-build action with JSON payload submitted as POST request")
 
 JSON payload is rendered as a [Groovy template](http://groovy.codehaus.org/Groovy+Templates), having the following variables in scope:
  
-* **`jenkins`** - instance of [`jenkins.model.Jenkins`](http://javadoc.jenkins-ci.org/jenkins/model/Jenkins.html)
-* **`build`** - instance of [`hudson.model.AbstractBuild`](http://javadoc.jenkins-ci.org/hudson/model/AbstractBuild.html)
-* **`env`** - instance of [`hudson.EnvVars`](http://javadoc.jenkins-ci.org/hudson/EnvVars.html) corresponding to the current build process
+* **`jenkins`** - instance of [`jenkins.model.Jenkins`](https://javadoc.jenkins.io/jenkins/model/Jenkins.html)
+* **`build`** - instance of [`hudson.model.AbstractBuild`](https://javadoc.jenkins.io/hudson/model/AbstractBuild.html)
+* **`env`** - instance of [`hudson.EnvVars`](https://javadoc.jenkins.io/hudson/EnvVars.html) corresponding to the current build process
 
-Here's a [RequestBin](http://requestb.in/) of submitting a default payload:
+Example of a received notification (historical screenshot):
 
-![RequestBin for the default JSON payload](https://raw.githubusercontent.com/cloudnative/jenkins-notify-plugin/master/screenshots/request-bin.png "RequestBin for the default JSON payload")
+![RequestBin for a JSON payload](screenshots/request-bin.png "RequestBin for a JSON payload")
 
 In addition, **`json( Object )`** helper function is available, rendering any `Object` provided as JSON.
 
@@ -35,5 +34,12 @@ For example:
 
 ### Building and installing the plugin
 
-    mvn clean package -s settings.xml
-    cp -f target/*.hpi ~/.jenkins/plugins
+Requires **Jenkins 2.568.3 or newer**, **Java 21 or 25**, and **Maven 3.9.6 or newer**.
+
+    mvn -B -ntp clean verify
+
+Upload `target/notify-plugin.hpi` under **Manage Jenkins > Plugins > Advanced settings > Deploy Plugin**, then restart Jenkins. Install the declared dependencies when prompted. The internal plugin ID remains `notify-plugin`, so existing job configuration keeps its identity. Pipeline jobs are not supported.
+
+CI tests the minimum Jenkins version, current LTS and current weekly on Java 21, plus current LTS on Java 25. Renovate opens dependency update PRs; minor, patch, pin and digest updates may merge automatically only after required checks pass. Major updates remain for manual review.
+
+Originally based on [cloudnative/jenkins-notify-plugin](https://github.com/cloudnative/jenkins-notify-plugin). Apache-2.0 license retained.
