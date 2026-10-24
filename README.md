@@ -40,6 +40,6 @@ Requires **Jenkins 2.568.3 or newer**, **Java 21 or 25**, and **Maven 3.9.6 or n
 
 Upload `target/notify-plugin.hpi` under **Manage Jenkins > Plugins > Advanced settings > Deploy Plugin**, then restart Jenkins. Install the declared dependencies when prompted. The internal plugin ID remains `notify-plugin`, so existing job configuration keeps its identity. Pipeline jobs are not supported.
 
-CI tests the minimum Jenkins version, current LTS and current weekly on Java 21, plus current LTS on Java 25. Renovate opens dependency update PRs; minor, patch, pin and digest updates may merge automatically only after required checks pass. Major updates remain for manual review.
+CI tests the minimum Jenkins version, current LTS and current weekly on Java 21, plus current LTS on Java 25. Renovate dependency updates and Dependabot security updates merge automatically after required checks pass, including major, minor, patch, pin and digest updates. Branch protection requires current-base CI and security checks.
 
 Originally based on [cloudnative/jenkins-notify-plugin](https://github.com/cloudnative/jenkins-notify-plugin). Apache-2.0 license retained.
