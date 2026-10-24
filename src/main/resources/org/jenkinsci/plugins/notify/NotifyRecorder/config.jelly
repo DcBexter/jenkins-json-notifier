@@ -1,3 +1,4 @@
+<?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core"
          xmlns:st="jelly:stapler"
          xmlns:d="jelly:define"
@@ -13,7 +14,7 @@
 
   <f:entry title        = "Notify template"
            field        = "notifyTemplate"
-           description  = "JSON payload to send">
+           description  = "JSON payload to send. Custom Groovy templates require approval in Manage Jenkins > In-process Script Approval.">
     <f:textarea default = "${descriptor.defaultNotifyTemplate}"/>
   </f:entry>
 </j:jelly>

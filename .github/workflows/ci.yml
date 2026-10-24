@@ -1,0 +1,50 @@
+name: Jenkins compatibility
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Jenkins ${{ matrix.channel }} / Java ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {channel: baseline, java: '21'}
+          - {channel: lts, java: '21'}
+          - {channel: weekly, java: '21'}
+          - {channel: lts, java: '25'}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - name: Resolve Jenkins version
+        id: jenkins
+        env:
+          CHANNEL: ${{ matrix.channel }}
+        run: |
+          case "$CHANNEL" in
+            baseline) version=$(sed -n 's:.*<jenkins.version>\(.*\)</jenkins.version>.*:\1:p' pom.xml) ;;
+            lts) version=$(curl --fail --silent --show-error --location --retry 3 https://updates.jenkins.io/stable/latestCore.txt) ;;
+            weekly) version=$(curl --fail --silent --show-error --location --retry 3 https://updates.jenkins.io/latestCore.txt) ;;
+          esac
+          [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || exit 1
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Testing Jenkins $version"
+      - name: Build and test plugin
+        env:
+          JENKINS_VERSION: ${{ steps.jenkins.outputs.version }}
+        run: mvn -B -ntp -Djenkins.version="$JENKINS_VERSION" clean verify
